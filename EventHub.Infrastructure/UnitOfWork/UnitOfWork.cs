@@ -27,7 +27,7 @@ public class UnitOfWork : IUnitOfWork
         return (IGenericRepository<T>)repository;
     }
 
-    public Task<int> CompleteAsync(CancellationToken cancellationToken = default)
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         => _context.SaveChangesAsync(cancellationToken);
 
     public void Dispose() => _context.Dispose();

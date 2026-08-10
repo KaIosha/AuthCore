@@ -52,16 +52,28 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
         {
             softDeletable.IsDeleted = true;
             softDeletable.DeletedAt = DateTime.Now;
-            Update(entity);
+            await UpdateAsync(entity);
             return;
         }
 
-        Remove(entity);
+        await DeleteAsync(entity);
     }
 
-    public void Update(T entity) => _dbSet.Update(entity);
+    public async Task UpdateAsync(T entity)
+    {
+        _dbSet.Update(entity);
+        await _context.SaveChangesAsync();
+    }
 
-    public void Remove(T entity) => _dbSet.Remove(entity);
+    public async Task DeleteAsync(T entity)
+    {
+        _dbSet.Remove(entity);
+        await _context.SaveChangesAsync();
+    }
 
-    public void RemoveRange(IEnumerable<T> entities) => _dbSet.RemoveRange(entities);
+    public async Task RemoveRangeAsync(IEnumerable<T> entities)
+    {
+        _dbSet.RemoveRange(entities);
+        await _context.SaveChangesAsync();
+    }
 }

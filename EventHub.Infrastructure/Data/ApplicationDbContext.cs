@@ -21,6 +21,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,6 +38,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
         builder.Entity<Review>().HasQueryFilter(r => !r.IsDeleted);
         builder.Entity<Ticket>().HasQueryFilter(t => !t.IsDeleted);
         builder.Entity<Favorite>().HasQueryFilter(f => !f.IsDeleted);
+        builder.Entity<RefreshToken>().HasQueryFilter(r => !r.IsDeleted);
 
         builder.Entity<Organization>(entity =>
         {
@@ -125,6 +127,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
             entity.HasOne(p => p.Registration)
                 .WithOne(r => r.Payment)
                 .HasForeignKey<Payment>(p => p.RegistrationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
