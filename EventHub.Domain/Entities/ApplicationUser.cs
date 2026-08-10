@@ -9,6 +9,10 @@ namespace EventHub.Domain.Entities
         public string LastName { get; set; } = string.Empty;
         public string? ProfilePhoto { get; set; }
 
+        // Email confirmation code (6 digits) + when it expires
+        public string? EmailConfirmationCode { get; set; }
+        public DateTime? EmailConfirmationCodeExpiresAt { get; set; }
+
         // Soft Delete Attributes
         public bool IsDeleted { get; set; } = false;
         public DateTime? DeletedAt { get; set; }
