@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 
-namespace EventHub.Application.DTOs.AuthDTOs
+namespace EventHub.Application.Dtos.AuthDtos
 {
-    public class AuthResponseDTO
+    public class AuthResponseDto
     {
         public string Message { get; set; } = string.Empty;
         public string UserName { get; set; } = string.Empty;
@@ -16,5 +16,6 @@ namespace EventHub.Application.DTOs.AuthDTOs
         public string Token { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime ExpireAt { get; set; }
+        public bool IsSuccess { get; set; } = false;
     }
 }

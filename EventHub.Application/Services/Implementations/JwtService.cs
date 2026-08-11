@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using EventHub.Application.DTOs.AuthDTOs;
+using EventHub.Application.Dtos.AuthDtos;
 using EventHub.Application.Helper;
 using EventHub.Application.Interfaces;
 using EventHub.Application.Services.Interfaces;
@@ -29,7 +29,7 @@ namespace EventHub.Application.Services.Implementations
 
         // Creates a signed JWT (access token) for the user and stores a NEW refresh token in the DB.
         // Used on login and registration.
-        public async Task<AuthResponseDTO> CreateJwtTokenAsync(ApplicationUser user)
+        public async Task<AuthResponseDto> CreateJwtTokenAsync(ApplicationUser user)
         {
             // 1. Build the token claims: who the user is + their roles
             var claims = new List<Claim>
@@ -70,13 +70,13 @@ namespace EventHub.Application.Services.Implementations
                 IsUsed = false,
                 IsRevoked = false,
                 CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.AddMonths(6)
+                ExpiresAt = DateTime.UtcNow.AddDays(7)
             };
 
             await _unitOfWork.Repository<RefreshToken>().AddAsync(refreshToken);
             await _unitOfWork.SaveChangesAsync();
 
-            return new AuthResponseDTO
+            return new AuthResponseDto
             {
                 Token = accessToken,
                 RefreshToken = refreshToken.Token,
@@ -84,35 +84,34 @@ namespace EventHub.Application.Services.Implementations
             };
         }
 
-        // Validates a refresh token coming from the client, marks it used (rotation),
-        // and issues a BRAND NEW access token + refresh token pair.
-        // Returns null if the token is invalid, expired, already used, revoked, or the user is gone.
-        public async Task<AuthResponseDTO?> RefreshTokenAsync(string refreshToken)
-        {
-            // 1. Find the stored token (the soft-delete query filter skips deleted rows automatically)
-            var storedToken = await _unitOfWork.Repository<RefreshToken>()
-                .FirstOrDefaultAsync(t => t.Token == refreshToken);
+        //// Validates a refresh token coming from the client, marks it used (rotation),
+        //// and issues a BRAND NEW access token + refresh token pair.
+        //// Returns null if the token is invalid, expired, already used, revoked, or the user is gone.
+        //public async Task<AuthResponseDto?> RefreshTokenAsync(string refreshToken)
+        //{
+        //    // 1. Find the stored token (the soft-delete query filter skips deleted rows automatically)
+        //    var storedToken = await _unitOfWork.Repository<RefreshToken>().FirstOrDefaultAsync(t => t.Token == refreshToken);
 
-            // 2. Reject invalid / already-used / revoked tokens
-            if (storedToken is null || storedToken.IsRevoked || storedToken.IsUsed)
-                return null;
+        //    // 2. Reject invalid / already-used / revoked tokens
+        //    if (storedToken is null || storedToken.IsRevoked || storedToken.IsUsed)
+        //        return null;
 
-            // 3. Reject expired tokens
-            if (storedToken.ExpiresAt < DateTime.UtcNow)
-                return null;
+        //    // 3. Reject expired tokens
+        //    if (storedToken.ExpiresAt < DateTime.UtcNow)
+        //        return null;
 
-            // 4. Load the user this token belongs to
-            var user = await _userManager.FindByIdAsync(storedToken.UserId.ToString());
-            if (user is null)
-                return null;
+        //    // 4. Load the user this token belongs to
+        //    var user = await _userManager.FindByIdAsync(storedToken.UserId.ToString());
+        //    if (user is null)
+        //        return null;
 
-            // 5. Rotation: mark the old token used + revoked so it can never be replayed
-            storedToken.IsUsed = true;
-            storedToken.IsRevoked = true;
-            await _unitOfWork.SaveChangesAsync();
+        //    // 5. Rotation: mark the old token used + revoked so it can never be replayed
+        //    storedToken.IsUsed = true;
+        //    storedToken.IsRevoked = true;
+        //    await _unitOfWork.SaveChangesAsync();
 
-            // 6. Issue a fresh token pair
-            return await CreateJwtTokenAsync(user);
-        }
+        //    // 6. Issue a fresh token pair
+        //    return await CreateJwtTokenAsync(user);
+        //}
     }
 }

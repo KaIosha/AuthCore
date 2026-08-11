@@ -1,6 +1,7 @@
-﻿using EventHub.Application.DTOs.AuthDTOs;
+using EventHub.Application.Dtos.AuthDtos;
 using EventHub.Application.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace EventHub.API.Controllers
 {
@@ -20,50 +21,56 @@ namespace EventHub.API.Controllers
         public async Task<IActionResult> Register([FromForm] UserRegisterDto dto)
         {
             var result = await _authService.RegisterUserAsync(dto);
-            return result.IsAuthenticated ? Ok(result) : BadRequest(result);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
 
         // Confirms the email with the 6-digit code from the email, then logs the user in
         [HttpPost("confirm-code")]
+        [EnableRateLimiting("fixed")]
         public async Task<IActionResult> ConfirmCode([FromBody] ConfirmCodeDto dto)
         {
             var result = await _authService.ConfirmCodeAsync(dto.Email, dto.Code);
-            return result.IsAuthenticated ? Ok(result) : BadRequest(result);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
 
-        [HttpPost("register-organization")]
-        public IActionResult RegisterOrganization([FromBody] OrganizationRegisterDto dto)
+        [HttpPost("resend-code")]
+        [EnableRateLimiting("fixed")]
+        public async Task<IActionResult> ResendCode([FromBody] ResendCodeDto dto)
         {
-            // TODO: implement organization registration
-            return Ok();
+            var result = await _authService.ResendConfirmationCodeAsync(dto.Email);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
 
         [HttpPost("login")]
-        public IActionResult Login([FromBody] LoginDTO dto)
+        public async Task<IActionResult> Login([FromBody] LoginDto dto)
         {
-            // TODO: implement login
-            return Ok();
+            var result = await _authService.LoginUserAsync(dto);
+            if (!result.IsSuccess) {return Unauthorized(result); }
+            return Ok(result);
         }
 
         [HttpPost("refresh-token")]
-        public IActionResult RefreshToken()
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto dto)
         {
-            // TODO: implement token refresh
-            return Ok();
+            
+            var result = await _authService.RefreshTokenAsync(dto);
+            return result.IsSuccess ? Ok(result) : Unauthorized(result);
         }
 
         [HttpPost("logout")]
-        public IActionResult Logout()
+        public async Task<IActionResult> Logout([FromBody]LogOutDto dto)
         {
-            // TODO: implement logout
-            return Ok();
+            var result = await _authService.LogoutAsync(dto.RefreshToken);
+            return result.IsSuccess ? NoContent() : BadRequest(result);
         }
 
-        [HttpGet("me")]
-        public IActionResult GetProfile()
+
+        [HttpPost("register-organization")]
+        public async Task<IActionResult> RegisterOrganization([FromForm] OrganizationRegisterDto dto)
         {
-            // TODO: implement getting user profile
-            return Ok();
+            var result = await _authService.RegisterOrganizationAsync(dto);
+            return result.IsSuccess? Ok(result) : BadRequest(result);
         }
+
     }
 }
