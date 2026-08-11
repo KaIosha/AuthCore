@@ -12,6 +12,7 @@ namespace EventHub.Domain.Entities
         // Email confirmation code (6 digits) + when it expires
         public string? EmailConfirmationCode { get; set; }
         public DateTime? EmailConfirmationCodeExpiresAt { get; set; }
+        public int EmailConfirmationCodeAttempts { get; set; } = 0;
 
         // Soft Delete Attributes
         public bool IsDeleted { get; set; } = false;

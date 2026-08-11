@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 
-namespace EventHub.Application.DTOs.AuthDTOs
+namespace EventHub.Application.Dtos.AuthDtos
 {
     public class UserRegisterDto
     {

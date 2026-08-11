@@ -1,4 +1,5 @@
 using System.Text;
+using EventHub.API.Extensions;
 using EventHub.Application.Helper;
 using EventHub.Application.Interfaces;
 using EventHub.Application.Services.Implementations;
@@ -48,6 +49,7 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
     options.Password.RequireNonAlphanumeric = true;
     options.Password.RequireUppercase = true;
     options.User.RequireUniqueEmail = true;
+    options.SignIn.RequireConfirmedEmail = true; // Require email confirmation for login
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
@@ -79,7 +81,10 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Auth services
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IProfilePhotosService, ProfilePhotosService>();
+builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddSingleton(tokenValidationParameters);
+
+builder.Services.AddFixedRateLimiter();
 
 var app = builder.Build();
 
@@ -91,7 +96,7 @@ var app = builder.Build();
 //        app.Configuration["SuperAdmin:Password"],
 //        app.Configuration["SuperAdmin:FirstName"],
 //        app.Configuration["SuperAdmin:LastName"]);
-//}
+//} 
 
 if (app.Environment.IsDevelopment())
 {
@@ -102,7 +107,7 @@ app.UseStaticFiles();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
-
+app.UseRateLimiter();
 app.MapControllers();
 
 app.Run();

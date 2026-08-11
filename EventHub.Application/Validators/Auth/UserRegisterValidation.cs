@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
-using EventHub.Application.DTOs.AuthDTOs;
+using EventHub.Application.Dtos.AuthDtos;
 using FluentValidation;
 
 namespace EventHub.Application.Validators.Auth

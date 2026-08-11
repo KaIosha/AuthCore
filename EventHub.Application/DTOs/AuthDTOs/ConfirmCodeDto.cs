@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace EventHub.Application.DTOs.AuthDTOs
+namespace EventHub.Application.Dtos.AuthDtos
 {
     public class ConfirmCodeDto
     {
