@@ -18,6 +18,10 @@ namespace EventHub.Domain.Entities
         public bool IsDeleted { get; set; } = false;
         public DateTime? DeletedAt { get; set; }
 
+        public string? PasswordResetCode { get; set; }
+        public DateTime? PasswordResetCodeExpiresAt { get; set; }
+        public int PasswordResetCodeAttempts { get; set; } = 0;
+
         // Navigation properties
         public Organization? Organization { get; set; }
         public ICollection<Review> Reviews { get; set; } = new List<Review>();

@@ -72,5 +72,21 @@ namespace EventHub.API.Controllers
             return result.IsSuccess? Ok(result) : BadRequest(result);
         }
 
+        [HttpPost("forget-password")]
+        [EnableRateLimiting("fixed")]
+        public async Task<IActionResult> ForgetPassword([FromBody] ForgetPasswordDto dto)
+        { 
+            var result = await _authService.ForgetPasswordAsync(dto);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
+        [HttpPost("reset-password")]
+        [EnableRateLimiting("fixed")]
+        public async Task<IActionResult> ResetPassword([FromBody]ResetPasswordDto dto)
+        { 
+            var result = await _authService.ResetPasswordAsync(dto);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
     }
 }

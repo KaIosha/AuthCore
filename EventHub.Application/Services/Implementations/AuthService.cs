@@ -14,6 +14,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 
+
 namespace EventHub.Application.Services.Implementations
 {
     public class AuthService : IAuthService
@@ -24,9 +25,12 @@ namespace EventHub.Application.Services.Implementations
         private readonly IValidator<UserRegisterDto> _registerValidator;
         private readonly IValidator<LoginDto> _loginValidator;
         private readonly IValidator<OrganizationRegisterDto> _organizationValidator;
+        private readonly IValidator<ForgetPasswordDto> _forgetPasswordValidator;
+        private readonly IValidator<ResetPasswordDto> _resetPasswordValidator;
         private readonly IEmailService _emailService;
         private readonly IFileService _fileService;
         private readonly TokenValidationParameters _tokenValidationParameters;
+
 
         public AuthService(
             UserManager<ApplicationUser> userManager,
@@ -37,6 +41,8 @@ namespace EventHub.Application.Services.Implementations
             IEmailService emailService,
             IFileService fileService,
             IValidator<OrganizationRegisterDto> organizationValidator,
+            IValidator<ForgetPasswordDto> forgetPasswordValidator,
+            IValidator<ResetPasswordDto> resetPasswordValidator,
             TokenValidationParameters tokenValidationParameters)
 
         {
@@ -49,6 +55,8 @@ namespace EventHub.Application.Services.Implementations
             _loginValidator = loginValidator;
             _organizationValidator = organizationValidator;
             _tokenValidationParameters = tokenValidationParameters;
+            _forgetPasswordValidator = forgetPasswordValidator;
+            _resetPasswordValidator = resetPasswordValidator;
         }
 
         public async Task<AuthResponseDto> RegisterUserAsync(UserRegisterDto dto)
@@ -453,7 +461,6 @@ namespace EventHub.Application.Services.Implementations
                 Message = "Logged out successfully."
             };
         }
-
         public async Task<AuthResponseDto> RegisterOrganizationAsync(OrganizationRegisterDto dto)
         {
             // STEP 1 - DONE: Validate the DTO (rules from OrganizationRegisterValidation)
@@ -486,7 +493,7 @@ namespace EventHub.Application.Services.Implementations
                 };
             }
             // STEP 4-6: Upload the owner photo, logo, and verification PDF (IFileService).
-           
+
             string? ownerPhotoUrl = null;
             string? organizationLogoUrl = null;
             string? verificationDocumentUrl = null;
@@ -553,7 +560,7 @@ namespace EventHub.Application.Services.Implementations
                     };
                 }
                 // STEP 10: Inside the tx - add the Organization row:
-               
+
                 var organization = new Organization
                 {
                     OwnerId = user.Id,
@@ -572,7 +579,7 @@ namespace EventHub.Application.Services.Implementations
             }
             catch (Exception)
             {
-               
+
                 //    delete the uploaded files + rethrow so the caller sees the failure
                 await DeleteUploadedFilesAsync(ownerPhotoUrl, organizationLogoUrl, verificationDocumentUrl);
                 throw;
@@ -589,6 +596,144 @@ namespace EventHub.Application.Services.Implementations
                 UserName = dto.OrganizationOwnerUsername,
             };
         }
+
+        // Forget and Reset pass
+        public async Task<AuthResponseDto> ForgetPasswordAsync(ForgetPasswordDto dto)
+        {
+            var validate = await _forgetPasswordValidator.ValidateAsync(dto);
+            if (!validate.IsValid)
+            {
+                return new AuthResponseDto
+                {
+                    Message = "Validation failed: " + string.Join(", ", validate.Errors.Select(e => e.ErrorMessage))
+                };
+            }
+
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+            if (user is null)
+            {
+                return new AuthResponseDto
+                {
+                    IsSuccess = true,
+                    Message = "If the email is registered, a reset code has been sent to it."
+                };
+            }
+
+            var ResetCode = Random.Shared.Next(100000, 1000000).ToString();
+            user.PasswordResetCode = ResetCode;
+            user.PasswordResetCodeExpiresAt = DateTime.UtcNow.AddMinutes(3);
+            user.PasswordResetCodeAttempts = 0;
+            await _userManager.UpdateAsync(user);
+
+
+            var htmlBody = $"""
+              <h2>Welcome to EventHub, {user.FirstName}!</h2>
+              <p>Your Reset code is:</p>
+              <h1 style="letter-spacing: 5px;">{ResetCode}</h1>
+              <p>Enter it in the app to reset your Password. It expires in 3 minutes.</p>
+              """;
+
+            await _emailService.SendAsync(user.Email, "EventHub - Code to Reset your Password", htmlBody);
+            return new AuthResponseDto
+            {
+                IsSuccess = true,
+                Message = "If the email is registered, a reset code has been sent to it."
+            };
+        }
+        public async Task<AuthResponseDto> ResetPasswordAsync(ResetPasswordDto dto)
+        {
+            var validate = await _resetPasswordValidator.ValidateAsync(dto);
+            if (!validate.IsValid)
+            {
+                return new AuthResponseDto
+                {
+                    Message = "Validation failed: " + string.Join(", ", validate.Errors.Select(e => e.ErrorMessage))
+                };
+            }
+
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+            if (user is null)
+            {
+                return new AuthResponseDto
+                {
+                    Message = "Invalid email or Reset code."
+                };
+            }
+
+            if (user.PasswordResetCodeAttempts >= 5)
+            {
+                return new AuthResponseDto
+                {
+                    IsAuthenticated = false,
+                    Message = "Too many failed reset attempts. Please request a new code."
+                };
+            }
+
+            if (dto.Code != user.PasswordResetCode || user.PasswordResetCodeExpiresAt < DateTime.UtcNow)
+            {
+                user.PasswordResetCodeAttempts++;
+
+                if (user.PasswordResetCodeAttempts >= 5)
+                {
+                    user.PasswordResetCode = null;
+                    user.PasswordResetCodeExpiresAt = null;
+                }
+                await _userManager.UpdateAsync(user);
+                return new AuthResponseDto
+                {
+                    IsAuthenticated = false,
+                    Message = "Reset code has expired or is invalid."
+                };
+            }
+
+
+            var removePass = await _userManager.RemovePasswordAsync(user);
+            if (!removePass.Succeeded)
+            {
+                return new AuthResponseDto
+                {
+                    Message = string.Join(',', removePass.Errors.Select(x => x.Description))
+                };
+            }
+            var result = await _userManager.AddPasswordAsync(user, dto.NewPassword);
+
+            if (!result.Succeeded)
+            {
+                return new AuthResponseDto
+                {
+                    Message = string.Join(',', result.Errors.Select(x => x.Description))
+                };
+            }
+
+            user.PasswordResetCodeAttempts = 0;
+            user.PasswordResetCodeExpiresAt = null;
+            user.PasswordResetCode = null;
+
+
+            await _userManager.UpdateAsync(user);
+
+
+            var userRole = (await _userManager.GetRolesAsync(user)).FirstOrDefault();
+            var jwtToken = await _jwtService.CreateJwtTokenAsync(user);
+            return new AuthResponseDto
+            {
+                IsSuccess = true,
+                IsAuthenticated = true,
+                Message = "Password reset successfully.",
+                UserName = user.UserName,
+                Email = user.Email,
+                Role = userRole,
+                Token = jwtToken.Token,
+                RefreshToken = jwtToken.RefreshToken,
+                ExpireAt = jwtToken.ExpireAt
+            };
+
+        }
+
+
+
+
+        //-------------Private Mehtods
 
         private async Task GenerateAndSendCodeAsync(ApplicationUser user)
         {

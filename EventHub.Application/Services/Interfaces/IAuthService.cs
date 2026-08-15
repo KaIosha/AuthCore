@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using EventHub.Application.Dtos.AuthDtos;
+using EventHub.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 
 namespace EventHub.Application.Services.Interfaces
@@ -14,5 +15,7 @@ namespace EventHub.Application.Services.Interfaces
         Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenDto dto);
         Task<AuthResponseDto> LogoutAsync(string refreshToken);
         Task<AuthResponseDto> RegisterOrganizationAsync(OrganizationRegisterDto dto);
+        Task<AuthResponseDto> ForgetPasswordAsync(ForgetPasswordDto dto);
+        Task<AuthResponseDto> ResetPasswordAsync(ResetPasswordDto dto);
     }
 }

@@ -35,6 +35,7 @@ namespace EventHub.Application.Validators.Auth
              .Matches(@"[\^$*.\[\]{}()?""!@#%&/\\,><':;|_~`]").WithMessage("Password must contain at least one special character.");
 
             RuleFor(x => x.ConfirmPassword)
+                .NotEmpty().WithMessage("ConfirmPassword is required.")
                 .Equal(x => x.Password).WithMessage("Passwords do not match.");
 
         }
