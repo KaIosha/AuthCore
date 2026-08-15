@@ -1,4 +1,4 @@
-# EventHub
+# EventHub 
 
 A backend API for an event management platform. Users register for event sessions, organizations publish events, and payments/reviews complete the lifecycle.
 
