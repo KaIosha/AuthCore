@@ -69,6 +69,12 @@ AddJwtBearer(options =>
     options.SaveToken = true;
     options.RequireHttpsMetadata = false;
     options.TokenValidationParameters = tokenValidationParameters;
+})
+.AddGoogle(options =>
+{
+
+    options.ClientId = builder.Configuration["Google:ClientId"]!;
+    options.ClientSecret = builder.Configuration["Google:ClientSecret"]!;
 });
 
 

@@ -2,6 +2,7 @@ using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using EventHub.Application.Dtos.AuthDtos;
 using EventHub.Application.Helper;
@@ -11,6 +12,7 @@ using EventHub.Application.Services.Interfaces;
 using EventHub.Domain.Constants;
 using EventHub.Domain.Entities;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 
@@ -619,7 +621,7 @@ namespace EventHub.Application.Services.Implementations
                 };
             }
 
-            var ResetCode = Random.Shared.Next(100000, 1000000).ToString();
+            var ResetCode = RandomNumberGenerator.GetInt32(100_000, 1_000_000).ToString();//Random.Shared.Next(100000, 1000000).ToString();
             user.PasswordResetCode = ResetCode;
             user.PasswordResetCodeExpiresAt = DateTime.UtcNow.AddMinutes(3);
             user.PasswordResetCodeAttempts = 0;
@@ -687,6 +689,8 @@ namespace EventHub.Application.Services.Implementations
             }
 
 
+            await using var tx = await _unitOfWork.BeginTransactionAsync();
+
             var removePass = await _userManager.RemovePasswordAsync(user);
             if (!removePass.Succeeded)
             {
@@ -712,6 +716,8 @@ namespace EventHub.Application.Services.Implementations
 
             await _userManager.UpdateAsync(user);
 
+            await tx.CommitAsync();
+
 
             var userRole = (await _userManager.GetRolesAsync(user)).FirstOrDefault();
             var jwtToken = await _jwtService.CreateJwtTokenAsync(user);
@@ -732,13 +738,75 @@ namespace EventHub.Application.Services.Implementations
 
 
 
+        public async Task<AuthResponseDto> GoogleResponseAsync(AuthenticateResult result)
+        {
+            // Read Google user claims
+            var email = result.Principal?.FindFirst(ClaimTypes.Email)?.Value;
+            var firstName = result.Principal?.FindFirst(ClaimTypes.GivenName)?.Value;
+            var lastName = result.Principal?.FindFirst(ClaimTypes.Surname)?.Value;
+
+
+            if (string.IsNullOrEmpty(email))
+            {
+                return new AuthResponseDto
+                {
+                    IsAuthenticated = false,
+                    Message = "Unable to retrieve email from Google."
+                };
+            }
+
+            // Check if the user already exists
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user == null)
+            {
+
+                // Create a new Identity user if it doesn't exist
+                user = new ApplicationUser
+                {
+                    UserName = email.Split('@')[0],
+                   // UserName = email,
+                    Email = email,
+                    FirstName = firstName ?? "",
+                    LastName = lastName ?? ""
+                };
+
+                var createResult = await _userManager.CreateAsync(user);
+
+                if (!createResult.Succeeded)
+                {
+                    return new AuthResponseDto
+                    {
+                        IsAuthenticated = false,
+                        Message = string.Join(", ", createResult.Errors.Select(e => e.Description))
+                    };
+                }
+
+                // Give the default role
+                await _userManager.AddToRoleAsync(user, Roles.User);
+            }
+
+            // Generate JWT + Refresh Token
+            var token = await _jwtService.CreateJwtTokenAsync(user);
+            var roles = await _userManager.GetRolesAsync(user);
+            return new AuthResponseDto
+            {
+                IsAuthenticated = true,
+                Message = "Login successful.",
+                UserName = user.UserName,
+                Email = user.Email,
+                Token = token.Token,
+                RefreshToken = token.RefreshToken,
+                ExpireAt = token.ExpireAt,
+                Role = roles.FirstOrDefault(),
+                IsSuccess = true
+            };
+        }
 
         //-------------Private Mehtods
-
         private async Task GenerateAndSendCodeAsync(ApplicationUser user)
         {
             //Generate a 6 - digit confirmation code and save it on the user
-            var confirmationCode = Random.Shared.Next(100000, 1000000).ToString();
+            var confirmationCode = RandomNumberGenerator.GetInt32(100_000, 1_000_000).ToString();//Random.Shared.Next(100000, 1000000).ToString();
             user.EmailConfirmationCode = confirmationCode;
             user.EmailConfirmationCodeExpiresAt = DateTime.UtcNow.AddMinutes(3);
             //// Persist the code + expiry on the user row
@@ -770,7 +838,6 @@ namespace EventHub.Application.Services.Implementations
             await _fileService.DeleteAsync(logoUrl);
             await _fileService.DeleteAsync(docUrl);
         }
-
-
+       
     }
 }

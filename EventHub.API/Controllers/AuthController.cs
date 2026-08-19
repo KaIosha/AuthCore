@@ -1,5 +1,8 @@
 using EventHub.Application.Dtos.AuthDtos;
 using EventHub.Application.Services.Interfaces;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -88,5 +91,32 @@ namespace EventHub.API.Controllers
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
 
+        // GET: api/Auth/login-google
+        [HttpGet("login-google")]
+        public async Task <IActionResult> LoginGoogle()
+        {
+            var properties = new AuthenticationProperties
+            {
+                RedirectUri = Url.Action(nameof(GoogleResponse))
+            };
+
+            return Challenge(properties, GoogleDefaults.AuthenticationScheme);
+        }
+
+        [HttpGet("google-response")]
+        public async Task<IActionResult> GoogleResponse()
+        {
+            var result = await HttpContext.AuthenticateAsync(GoogleDefaults.AuthenticationScheme);
+
+            if (!result.Succeeded)
+                return BadRequest("Google authentication failed.");
+
+            var response = await _authService.GoogleResponseAsync(result);
+
+            if (!response.IsAuthenticated)
+                return BadRequest(response);
+
+            return Ok(response);
+        }
     }
 }
