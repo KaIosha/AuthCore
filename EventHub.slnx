@@ -1,6 +1,0 @@
-<Solution>
-  <Project Path="EventHub.API/EventHub.API.csproj" />
-  <Project Path="EventHub.Application/EventHub.Application.csproj" />
-  <Project Path="EventHub.Domain/EventHub.Domain.csproj" />
-  <Project Path="EventHub.Infrastructure/EventHub.Infrastructure.csproj" />
-</Solution>

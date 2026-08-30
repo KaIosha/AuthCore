@@ -1,0 +1,11 @@
+@Auth.API_HostAddress = http://localhost:5032
+
+GET {{Auth.API_HostAddress}}/swagger
+Accept: application/json
+
+###
+
+POST {{Auth.API_HostAddress}}/api/auth/register
+Accept: application/json
+
+###

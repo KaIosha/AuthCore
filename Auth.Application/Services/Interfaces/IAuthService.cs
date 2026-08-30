@@ -1,0 +1,23 @@
+﻿using System;
+using System.Threading.Tasks;
+using Auth.Application.Dtos.AuthDtos;
+using Auth.Domain.Entities;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Identity;
+
+namespace Auth.Application.Services.Interfaces
+{
+    public interface IAuthService
+    {
+        Task<AuthResponseDto> RegisterUserAsync(UserRegisterDto dto);
+        Task<AuthResponseDto> LoginUserAsync(LoginDto dto);
+        Task<AuthResponseDto> ConfirmCodeAsync(string email, string code);
+        Task<AuthResponseDto> ResendConfirmationCodeAsync(string email);
+        Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenDto dto);
+        Task<AuthResponseDto> LogoutAsync(string refreshToken);
+        Task<AuthResponseDto> RegisterOrganizationAsync(OrganizationRegisterDto dto);
+        Task<AuthResponseDto> ForgetPasswordAsync(ForgetPasswordDto dto);
+        Task<AuthResponseDto> ResetPasswordAsync(ResetPasswordDto dto);
+        Task<AuthResponseDto> GoogleResponseAsync(AuthenticateResult result);
+    }
+}

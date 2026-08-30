@@ -1,103 +1,136 @@
-# EventHub 
+# 🔐 Auth — ASP.NET Core Authentication & Authorization API
 
-A backend API for an event management platform. Users register for event sessions, organizations publish events, and payments/reviews complete the lifecycle.
+A production-style **.NET 10** backend that implements a complete, secure authentication & authorization flow: user and organization registration, email confirmation with OTP codes, JWT + rotating refresh tokens, password recovery, and Google OAuth sign-in.
 
-> **Status:** Authentication is complete and tested. The event domain (events, registrations, payments, reviews) is modeled but not yet implemented. See [Roadmap](#roadmap).
+> This project was originally part of a larger event-management platform. I scoped it down to build a **standalone, reusable Auth feature** that can be dropped into (or extended to) any project.
 
-## Tech Stack
+---
 
-- **.NET 10** — ASP.NET Core Web API
-- **Entity Framework Core 10** + **SQL Server**
-- **ASP.NET Core Identity** — Guid keys, roles, password hashing
-- **JWT** access tokens + rotating refresh tokens
-- **FluentValidation** — request validation
-- **MailKit** — transactional email (SMTP)
+## ✨ What This Project Does
 
-## Architecture
+A full, real-world auth backend — not just a login endpoint. Everything a modern app needs to onboard, secure, and recover users:
 
-Clean Architecture with a strict dependency direction: **API → Application → Domain**, with Infrastructure implementing the Application/Infrastructure-facing contracts.
+- **User registration** with profile-photo upload
+- **Organization registration** with logo + verification-document upload (transactional, `Pending` approval workflow)
+- **Email confirmation** via 6-digit OTP codes sent through Gmail SMTP (MailKit)
+- **Login** (confirmed accounts only) issuing a JWT access token + refresh token
+- **Refresh token rotation** — single-use, DB-backed, replay-safe
+- **Logout** — revokes the presented refresh token
+- **Forgot / reset password** with OTP verification and atomic rotation
+- **Google OAuth** sign-in (`/api/auth/login-google` → callback)
+- **Role-based authorization** — `User`, `OrganizationAdmin`, `SuperAdmin`
+- **Rate limiting** on all OTP endpoints (brute-force protection)
 
-```
-EventHub.API/             Presentation. Controllers, middleware, rate limiting, config.
-EventHub.Application/     Use cases, DTOs, services, validators, contracts (IUnitOfWork, IGenericRepository, service interfaces).
-EventHub.Domain/          Entities, enums, roles, domain interfaces (ISoftDelete). No dependencies.
-EventHub.Infrastructure/  EF Core, migrations, DbContext, GenericRepository, UnitOfWork, seeding.
-```
+---
 
-Key structural decisions:
+## 🛠️ Tech Stack
 
-- **Repository + Unit of Work**: `IGenericRepository<T>` wraps DbSet access; `IUnitOfWork` exposes repositories and coordinates `SaveChanges`/transactions. Repositories deliberately do **not** auto-save on every mutation — the caller commits through the UoW, keeping write atomicity under the caller's control.
-- **Soft delete everywhere**: every entity implements `ISoftDelete`, and `ApplicationDbContext` installs `HasQueryFilter(!IsDeleted)` per entity, so deleted rows are automatically excluded from all queries.
-- **Identity with Guid keys**: `ApplicationUser : IdentityUser<Guid>`, `IdentityRole<Guid>`, `IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>`.
-
-## Domain Model
-
-| Entity | Purpose |
+| Layer | Tech |
 |---|---|
-| `ApplicationUser` | Identity user + profile, soft-delete flags, email-confirmation code (3 min expiry, 5-attempt lockout), password-reset code (same policy) |
-| `RefreshToken` | Single-use refresh token bound to a JWT (`JwtId`), `IsUsed`/`IsRevoked`, 7-day lifetime |
-| `Category` | Event categorization |
-| `Organization` | Event publisher; owns exactly one `ApplicationUser`; `Status` (`Active`/`Inactive`/`Pending`); requires verification document |
-| `Event` | Published event owned by an `Organization`, categorized by `Category`; `EventStatus` (`Pending`/…) |
-| `EventSession` | A dated/located session of an `Event` with a `Capacity`; users register for sessions |
-| `Registration` | A user's booking of an `EventSession` (`RegistrationStatus`); owns optional 1:1 `Payment` and `Ticket` |
-| `Payment` | Money for a registration (`PaymentStatus`) |
-| `Ticket` | Issued per confirmed registration |
-| `Review` | User review of an `Event` |
-| `Favorite` | Composite key `(UserId, EventId)`; a user's saved events |
+| Runtime | .NET 10 — ASP.NET Core Web API |
+| Data | Entity Framework Core 10 + SQL Server |
+| Identity | ASP.NET Core Identity (Guid keys, roles, hashing) |
+| Auth tokens | JWT (HS256) + rotating refresh tokens |
+| Validation | FluentValidation |
+| Email | MailKit (Gmail SMTP) |
+| OAuth | Google (`Microsoft.AspNetCore.Authentication.Google`) |
 
-Relationships are configured in `ApplicationDbContext.OnModelCreating`. Notable delete behaviors: sessions/reviews/favorites/tickets/payments cascade off their parent; user- and organization-owned rows use `Restrict` to protect history.
+---
 
-## Authentication
+## 🧱 Architecture
 
-Three roles: `User`, `OrganizationAdmin`, `SuperAdmin`.
+**Clean Architecture** with a strict dependency direction — **API → Application → Domain**, Infrastructure implements the contracts:
 
-### Flows
+```
+Auth.API/             Presentation. Controllers, rate limiting, config.
+Auth.Application/     Use cases, DTOs, services, validators, contracts.
+Auth.Domain/          Entities, enums, roles, domain interfaces. No dependencies.
+Auth.Infrastructure/  EF Core, migrations, DbContext, repositories, seeding.
+```
 
-- **User registration** — validates → uploads profile photo → creates Identity user → assigns `User` role → emails a 6-digit confirmation code (3-min expiry). The code is **never** returned in the response; it lives only in the email and the DB.
-- **Organization registration** — same, plus org name uniqueness, logo + verification PDF upload, and org + user creation inside a **transaction**. Files are uploaded before the transaction and deleted as compensation on failure. The organization is created `Pending` until a `SuperAdmin` approves it (not yet implemented).
-- **Email confirmation** — 6-digit code, 5 failed-attempt lockout; success clears the code and logs the user in (issues a token pair).
-- **Login** — email + password (only for confirmed accounts).
-- **Refresh** — see below.
-- **Logout** — revokes the presented refresh token.
-- **Forgot / reset password** — `forgot-password` emails a reset code (same lockout policy); `reset-password` verifies the code, pre-validates the new password, and rotates the password via `RemovePasswordAsync` + `AddPasswordAsync`. Both endpoints return identical responses whether or not the email exists (anti-enumeration).
+**Key structural decisions:**
 
-### JWT + Refresh Tokens
+- **Repository + Unit of Work** — `IGenericRepository<T>` wraps `DbSet` access; `IUnitOfWork` coordinates `SaveChanges` and transactions. Repositories never auto-save; the caller commits, keeping writes atomic.
+- **Soft delete everywhere** — every entity implements `ISoftDelete`, and the `DbContext` installs a global `HasQueryFilter(!IsDeleted)`, automatically excluding deleted rows from all queries.
+- **Identity with `Guid` keys** — `ApplicationUser : IdentityUser<Guid>`, `IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>`.
+- **Compensation on failure** — uploaded files are deleted if a later DB step fails, avoiding orphaned data.
 
-- Access token: HS256-signed, carries `NameIdentifier`, roles, `Jti`, ~`DurationInMinutes` expiry.
-- Refresh token: unguessable random value, persisted in DB, bound to the access token's `Jti`, valid 7 days, single-use.
-- On refresh, the **DB is the source of truth**: token looked up first, checked for used/revoked/expired, then the JWT is validated *without* the lifetime check (an expired access token is the expected input). The access token must be genuinely expired. Rotation marks the old token consumed before issuing a new pair.
-- Known limitations (accepted for now): replay of a *used* token is indistinguishable from logout revocation, so token-theft detection/family revocation is not implemented; access tokens remain valid until expiry after a password change; refresh tokens are never cleaned up.
+---
+
+## 📦 What I Implemented
+
+### Authentication flows
+- **User registration** → validate → upload profile photo → create Identity user → assign `User` role → email a 6-digit confirmation code (3-min expiry). The code is **never returned in the API response** — it only lives in the email and the DB.
+- **Organization registration** → the same, plus org-name uniqueness, logo + verification-PDF upload, and **atomic** org + user creation inside a `BEGIN TRANSACTION`. Files are uploaded first and removed as compensation if anything fails. The org starts `Pending` until a `SuperAdmin` approves it.
+- **Email confirmation** → 6-digit code with a **5-attempt lockout**; success clears the code and logs the user in by issuing a fresh token pair.
+- **Login** → email + password (confirmed accounts only).
+- **Logout** → revokes the presented refresh token in the DB.
+
+### JWT + refresh token rotation
+- Access token: HS256-signed, carries `NameIdentifier`, roles, and a `Jti`. Short-lived (`DurationInMinutes`).
+- Refresh token: unguessable random value, stored in the DB, **bound to the access token's `Jti`**, valid 7 days, **single-use**.
+- On refresh, **the DB is the source of truth** — the token is looked up first and checked for used/revoked/expired, then the JWT is validated *without* the lifetime check (an expired access token is expected input), and the access token must be genuinely expired. Rotation **consumes the old token before issuing the new pair**, so it can never be replayed.
+
+### Password recovery
+- **Forgot password** emails a reset code (same 5-attempt lockout policy).
+- **Reset password** verifies the code, then rotates the password via `RemovePasswordAsync` + `AddPasswordAsync`, issues a fresh token pair, and commits.
+- Both endpoints return **identical responses whether or not the email exists** — a deliberate anti-enumeration measure.
 
 ### Security decisions
+- `SignIn.RequireConfirmedEmail = true`, `RequireUniqueEmail = true`, strict password policy.
+- OTP endpoints protected by **both** a 5-attempt per-account counter **and** a fixed-window rate limiter (`1 request / 10 s`, queue 2).
+- Per-code-type attempt counters (`EmailConfirmationCodeAttempts` vs `PasswordResetCodeAttempts`) so one flow can't exhaust the other's budget.
+- File uploads validate extension + size and are cleaned up on failure.
 
-- `SignIn.RequireConfirmedEmail = true`; `RequireUniqueEmail = true`; strict password policy.
-- Email-confirmation and password-reset codes are brute-force limited by both a 5-attempt per-account counter **and** a fixed-window rate limiter on the endpoints.
-- Failed-attempt counters are per-code-type (`EmailConfirmationCodeAttempts` vs `PasswordResetCodeAttempts`) so one flow cannot exhaust the other's budget.
-- File uploads validate extension + size, and are deleted (compensated) when a later DB step fails.
-- Rate limiting: fixed window (`1 request / 10 s`, queue 2). Note: all code endpoints currently share one global bucket — a per-user partition key is a known improvement.
+---
 
-## Getting Started
+## 📂 Project Structure
+
+```
+Auth.slnx
+├── Auth.API/                  # Web API entry point
+│   ├── Controllers/AuthController.cs
+│   ├── Extensions/RateLimiterExtension.cs
+│   └── Program.cs
+├── Auth.Application/          # Business logic
+│   ├── Dtos/AuthDtos/         # Request/response DTOs
+│   ├── Helper/                # JWT + EmailSettings config
+│   ├── Interfaces/            # IUnitOfWork, IGenericRepository, ITransaction
+│   ├── Services/              # Auth/Email/File/Jwt services
+│   └── Validators/Auth/       # FluentValidation rules
+├── Auth.Domain/               # Entities, enums, roles, ISoftDelete
+│   └── Entities/              # ApplicationUser, Organization, RefreshToken
+└── Auth.Infrastructure/       # Persistence
+    ├── Data/                  # ApplicationDbContext + DbSeeder
+    ├── Migrations/
+    ├── Repositories/
+    └── UnitOfWork/
+```
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-
 - .NET 10 SDK
 - SQL Server (local or container)
 
 ### Configuration
 
-Connection string, JWT settings, email settings, and the seeded SuperAdmin are stored in **user secrets** (not committed). Set them for `EventHub.API`:
+Connection string, JWT settings, email settings, Google OAuth, and the seeded SuperAdmin are stored in **user secrets** (never committed):
 
 ```bash
-dotnet user-secrets init --project EventHub.API
-dotnet user-secrets set --project EventHub.API "ConnectionStrings:DefaultConnection" "Server=localhost;Database=EventHub;Trusted_Connection=True;TrustServerCertificate=True"
-dotnet user-secrets set --project EventHub.API "JWT:Key" "<256-bit secret>"
-dotnet user-secrets set --project EventHub.API "JWT:Issuer" "EventHub"
-dotnet user-secrets set --project EventHub.API "JWT:Audience" "EventHubUsers"
-dotnet user-secrets set --project EventHub.API "JWT:DurationInMinutes" "15"
-dotnet user-secrets set --project EventHub.API "EmailSettings:FromEmail" "<gmail-address>"
-dotnet user-secrets set --project EventHub.API "EmailSettings:DisplayName" "EventHub"
-dotnet user-secrets set --project EventHub.API "EmailSettings:Password" "<gmail-app-password>"
+dotnet user-secrets init --project Auth.API
+dotnet user-secrets set --project Auth.API "ConnectionStrings:DefaultConnection" "Server=localhost;Database=Auth;Trusted_Connection=True;TrustServerCertificate=True"
+dotnet user-secrets set --project Auth.API "JWT:Key" "<256-bit secret>"
+dotnet user-secrets set --project Auth.API "JWT:Issuer" "Auth"
+dotnet user-secrets set --project Auth.API "JWT:Audience" "AuthUsers"
+dotnet user-secrets set --project Auth.API "JWT:DurationInMinutes" "15"
+dotnet user-secrets set --project Auth.API "EmailSettings:FromEmail" "<gmail-address>"
+dotnet user-secrets set --project Auth.API "EmailSettings:DisplayName" "Auth"
+dotnet user-secrets set --project Auth.API "EmailSettings:Password" "<gmail-app-password>"
+dotnet user-secrets set --project Auth.API "Google:ClientId" "<google-client-id>"
+dotnet user-secrets set --project Auth.API "Google:ClientSecret" "<google-client-secret>"
 ```
 
 Email uses Gmail SMTP (`smtp.gmail.com:587`) with a Gmail **App Password** — never your login password.
@@ -105,48 +138,52 @@ Email uses Gmail SMTP (`smtp.gmail.com:587`) with a Gmail **App Password** — n
 ### Database
 
 ```bash
-dotnet ef database update -p EventHub.Infrastructure -s EventHub.API
+dotnet ef database update -p Auth.Infrastructure -s Auth.API
 ```
 
 ### Seeding
 
-Roles are created automatically when the seeder runs. To seed a `SuperAdmin`, uncomment the block in `Program.cs` (`DbSeeder.SeedAsync`) and provide the `SuperAdmin:Email`, `SuperAdmin:Password`, `SuperAdmin:FirstName`, `SuperAdmin:LastName` user secrets (the seeder has dev fallbacks).
+Roles are created automatically when the seeder runs. To seed a `SuperAdmin`, uncomment the block in `Program.cs` (`DbSeeder.SeedAsync`) and set the `SuperAdmin:Email`, `SuperAdmin:Password`, `SuperAdmin:FirstName`, `SuperAdmin:LastName` user secrets (the seeder has dev fallbacks).
 
 ### Run
 
 ```bash
-dotnet run --project EventHub.API
+dotnet run --project Auth.API
 ```
 
 OpenAPI (Swagger UI) is available at `/swagger` in development.
 
-## API Surface
+---
 
-| Method | Route | Auth | Purpose |
-|---|---|---|---|
-| POST | `/api/auth/register` | — | Register a user (multipart form, optional photo) |
-| POST | `/api/auth/confirm-code` | — | Confirm email with 6-digit code (logs in) |
-| POST | `/api/auth/resend-code` | — | Resend confirmation code |
-| POST | `/api/auth/login` | — | Login (confirmed accounts only) |
-| POST | `/api/auth/refresh-token` | — | Rotate token pair |
-| POST | `/api/auth/logout` | — | Revoke refresh token |
-| POST | `/api/auth/register-organization` | — | Register an organization (multipart form) |
-| POST | `/api/auth/forgot-password` | — | Email a password-reset code |
-| POST | `/api/auth/reset-password` | — | Set new password using reset code |
+## 📬 API Surface
+
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/api/auth/register` | Register a user (multipart form, optional photo) |
+| POST | `/api/auth/confirm-code` | Confirm email with 6-digit code (logs in) |
+| POST | `/api/auth/resend-code` | Resend confirmation code |
+| POST | `/api/auth/login` | Login (confirmed accounts only) |
+| POST | `/api/auth/refresh-token` | Rotate token pair |
+| POST | `/api/auth/logout` | Revoke refresh token |
+| POST | `/api/auth/register-organization` | Register an organization (multipart form) |
+| POST | `/api/auth/forgot-password` | Email a password-reset code |
+| POST | `/api/auth/reset-password` | Set new password using reset code |
+| GET | `/api/auth/login-google` | Start Google OAuth sign-in |
+| GET | `/api/auth/google-response` | Handle Google OAuth callback |
 
 All DTOs are validated with FluentValidation; validation failures and business errors return structured `AuthResponseDto` payloads.
 
-## Roadmap
+---
 
-1. **Categories** — CRUD (management).
-2. **Organizations** — SuperAdmin approval workflow for `Pending` organizations.
-3. **Events + EventSessions** — publish/manage by `OrganizationAdmin`.
-4. **Registrations → Payments → Tickets** — the transactional core.
-5. **Reviews + Favorites** — social features.
+## 🗺️ Roadmap
 
-## Notes for Contributors
+- [ ] SuperAdmin approval workflow for `Pending` organizations
+- [ ] Per-user rate-limit partition keys for OTP endpoints
+- [ ] Refresh-token family revocation / theft detection
+- [ ] Invalidate access tokens on password change
 
-- Write migrations only from `EventHub.Infrastructure` (`-p EventHub.Infrastructure -s EventHub.API`).
-- **Review the generated migration before applying it.** If it does not match intent and was never applied, delete it and regenerate rather than stacking fix-up migrations.
-- Follow the existing layering: controllers stay thin, business rules live in Application services, persistence stays in Infrastructure, and Domain has zero dependencies.
-- Keep entities non-nullable where the DB guarantees presence; nullable reference types are enabled across the solution.
+## 📝 Notes for Contributors
+
+- Write migrations only from `Auth.Infrastructure` (`-p Auth.Infrastructure -s Auth.API`).
+- **Review the generated migration before applying it** — if it doesn't match intent and was never applied, delete and regenerate rather than stacking fix-up migrations.
+- Follow the layering: thin controllers, business rules in Application, persistence in Infrastructure, **zero dependencies in Domain**.
